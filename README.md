@@ -1,6 +1,6 @@
 # MemeMorph
 
-MemeMorph is a platform for creating, sharing, and trading meme NFTs with AI-powered customization tools.
+MemeMorph is a web application that enables users to create, customize, and trade meme NFTs. It features a Python Flask backend for AI-powered image processing, connected to a React frontend that interacts with Web3 technologies to mint and manage NFTs on the blockchain.
 
 ## Project Structure
 
