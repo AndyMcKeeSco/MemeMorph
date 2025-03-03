@@ -159,12 +159,20 @@ const Header = ({ toggleSidebar }) => {
         }
       };
       
+      const handleDisconnect = () => {
+        // Handle wallet disconnect
+        deactivate();
+        setMenuOpen(false);
+      };
+      
       window.ethereum.on('chainChanged', handleChainChanged);
       window.ethereum.on('accountsChanged', handleAccountsChanged);
+      window.ethereum.on('disconnect', handleDisconnect);
       
       return () => {
         window.ethereum.removeListener('chainChanged', handleChainChanged);
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        window.ethereum.removeListener('disconnect', handleDisconnect);
       };
     }
   }, [deactivate]);
