@@ -220,11 +220,9 @@ fi
 
 # Create a .env file for frontend
 info "Creating environment file for frontend..."
-cat > .env << EOL
-REACT_APP_API_URL=http://localhost:5000
-REACT_APP_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-REACT_APP_NETWORK_ID=1337
-EOL
+cp .env.example .env
+# Update with secure random values
+sed -i "s/your-infura-project-id/$(openssl rand -hex 8)/g" .env
 success "Frontend environment file created."
 
 # Create systemd service files for backend

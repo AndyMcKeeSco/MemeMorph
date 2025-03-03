@@ -11,6 +11,7 @@ import uuid
 import logging
 from datetime import datetime
 from database import get_db, Database
+from web3_config import get_network_info, get_web3, get_nft_contract, get_token_contract
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
@@ -141,6 +142,11 @@ def index():
         "service": "MemeMorph API",
         "version": "1.0.0"
     })
+
+@app.route('/api/web3/network', methods=['GET'])
+def network_info():
+    """Get current Web3 network configuration"""
+    return jsonify(get_network_info())
 
 @app.route('/api/meme/templates', methods=['GET'])
 def get_templates():

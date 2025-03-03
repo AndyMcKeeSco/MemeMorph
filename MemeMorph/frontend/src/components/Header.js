@@ -1,11 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
 import { useWeb3React } from '@web3-react/core';
-import { InjectedConnector } from '@web3-react/injected-connector';
-
-const injected = new InjectedConnector({
-  supportedChainIds: [1, 3, 4, 5, 42, 56, 97, 1337]
-});
+import { injectedConnector } from '../utils/web3Config';
+import { switchNetwork, DEFAULT_NETWORK } from '../utils/web3Config';
 
 const HeaderContainer = styled.header`
   grid-area: header;
@@ -63,7 +60,19 @@ const Header = ({ toggleSidebar }) => {
 
   const connectWallet = async () => {
     try {
-      await activate(injected);
+      await activate(injectedConnector);
+      
+      // Check if we need to switch networks
+      const chainId = parseInt(window.ethereum.chainId, 16);
+      const targetNetwork = DEFAULT_NETWORK;
+      
+      if (window.ethereum && chainId !== targetNetwork) {
+        try {
+          await switchNetwork(targetNetwork);
+        } catch (switchError) {
+          console.error('Failed to switch network:', switchError);
+        }
+      }
     } catch (error) {
       console.error('Failed to connect wallet:', error);
     }
