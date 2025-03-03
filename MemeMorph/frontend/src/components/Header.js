@@ -114,7 +114,7 @@ const Header = ({ toggleSidebar }) => {
           connected={active} 
           onClick={handleWalletClick}
         >
-          {active ? shortenAddress(account) : 'Connect Wallet'}
+          {active ? shortenAddress(account) : 'Connect Your Wallet'}
         </WalletButton>
       </Controls>
     </HeaderContainer>
