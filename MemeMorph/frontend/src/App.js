@@ -3,17 +3,7 @@ import styled from 'styled-components';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MainContent from './components/MainContent';
-
-// Define app pages/routes
-export const PAGES = {
-  HOME: 'home',
-  COLLECTION: 'collection',
-  EXPLORE: 'explore',
-  CREATE: 'create',
-  MARKETPLACE: 'marketplace',
-  SETTINGS: 'settings',
-  HELP: 'help'
-};
+import { PAGES } from './constants';
 
 const AppContainer = styled.div`
   display: grid;

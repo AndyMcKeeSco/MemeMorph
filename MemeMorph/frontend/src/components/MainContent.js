@@ -3,7 +3,7 @@ import styled from 'styled-components';
 import { useWeb3React } from '@web3-react/core';
 import NFTCollection from './NFTCollection';
 import { getContracts } from '../utils/web3Config';
-import { PAGES } from '../App';
+import { PAGES } from '../constants';
 
 const MainContainer = styled.main`
   grid-area: main;

@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { PAGES } from '../App';
+import { PAGES } from '../constants';
 
 const SidebarContainer = styled.aside`
   grid-area: sidebar;
