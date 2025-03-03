@@ -5,7 +5,7 @@ const SidebarContainer = styled.aside`
   grid-area: sidebar;
   background-color: white;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
-  width: ${({ isOpen }) => (isOpen ? '250px' : '60px')};
+  width: ${({ $isOpen }) => ($isOpen ? '250px' : '60px')};
   transition: width 0.3s ease;
   overflow: hidden;
   z-index: 5;
@@ -34,12 +34,12 @@ const MenuItem = styled.li`
 `;
 
 const MenuIcon = styled.span`
-  margin-right: ${({ isOpen }) => (isOpen ? '15px' : '0')};
+  margin-right: ${({ $isOpen }) => ($isOpen ? '15px' : '0')};
   font-size: 1.2rem;
 `;
 
 const MenuText = styled.span`
-  opacity: ${({ isOpen }) => (isOpen ? '1' : '0')};
+  opacity: ${({ $isOpen }) => ($isOpen ? '1' : '0')};
   white-space: nowrap;
   transition: opacity 0.2s;
 `;
@@ -65,12 +65,12 @@ const settingsItems = [
 
 const Sidebar = ({ isOpen }) => {
   return (
-    <SidebarContainer isOpen={isOpen}>
+    <SidebarContainer $isOpen={isOpen}>
       <MenuList>
         {menuItems.map((item) => (
           <MenuItem key={item.id}>
-            <MenuIcon isOpen={isOpen}>{item.icon}</MenuIcon>
-            <MenuText isOpen={isOpen}>{item.label}</MenuText>
+            <MenuIcon $isOpen={isOpen}>{item.icon}</MenuIcon>
+            <MenuText $isOpen={isOpen}>{item.label}</MenuText>
           </MenuItem>
         ))}
         
@@ -78,8 +78,8 @@ const Sidebar = ({ isOpen }) => {
         
         {settingsItems.map((item) => (
           <MenuItem key={item.id}>
-            <MenuIcon isOpen={isOpen}>{item.icon}</MenuIcon>
-            <MenuText isOpen={isOpen}>{item.label}</MenuText>
+            <MenuIcon $isOpen={isOpen}>{item.icon}</MenuIcon>
+            <MenuText $isOpen={isOpen}>{item.label}</MenuText>
           </MenuItem>
         ))}
       </MenuList>
