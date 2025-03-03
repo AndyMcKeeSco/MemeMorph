@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { useWeb3React } from '@web3-react/core';
 import NFTCollection from './NFTCollection';
 import { getContracts } from '../utils/web3Config';
+import { PAGES } from '../App';
 
 const MainContainer = styled.main`
   grid-area: main;
@@ -81,7 +82,93 @@ const FeatureDescription = styled.p`
   line-height: 1.5;
 `;
 
-const MainContent = () => {
+// Page components
+const HomePage = ({ active, contracts }) => (
+  <>
+    <WelcomeSection>
+      <WelcomeTitle>Welcome to MemeMorph</WelcomeTitle>
+      <WelcomeDescription>
+        Create, customize, and trade your own meme NFTs with AI-powered tools. 
+        Join the revolution of digital meme ownership on the blockchain.
+      </WelcomeDescription>
+      <Button>
+        {active ? 'Create Your First Meme NFT' : 'Learn More'}
+      </Button>
+    </WelcomeSection>
+    
+    <FeaturesSection>
+      <FeatureCard>
+        <FeatureIcon>✨</FeatureIcon>
+        <FeatureTitle>AI-Powered Creation</FeatureTitle>
+        <FeatureDescription>
+          Generate unique memes with our advanced AI tools. Customize templates or create entirely new designs.
+        </FeatureDescription>
+      </FeatureCard>
+      
+      <FeatureCard>
+        <FeatureIcon>🔗</FeatureIcon>
+        <FeatureTitle>Blockchain Ownership</FeatureTitle>
+        <FeatureDescription>
+          Secure your meme creations as NFTs on the blockchain. Verifiable ownership that lasts forever.
+        </FeatureDescription>
+      </FeatureCard>
+      
+      <FeatureCard>
+        <FeatureIcon>💰</FeatureIcon>
+        <FeatureTitle>Trade with MMC Tokens</FeatureTitle>
+        <FeatureDescription>
+          Buy and sell NFTs using MemeMorphCoin (MMC), our platform's native token with low transaction fees.
+        </FeatureDescription>
+      </FeatureCard>
+    </FeaturesSection>
+  </>
+);
+
+const CollectionPage = ({ contracts }) => (
+  <NFTCollection nftContract={contracts.nftContract} />
+);
+
+const ExplorePage = () => (
+  <div style={{ textAlign: 'center', padding: '50px' }}>
+    <h2>Explore Page</h2>
+    <p>Discover trending memes and popular creators</p>
+    <p>Coming soon...</p>
+  </div>
+);
+
+const CreatePage = () => (
+  <div style={{ textAlign: 'center', padding: '50px' }}>
+    <h2>Create Page</h2>
+    <p>Create your own unique meme NFTs</p>
+    <p>Coming soon...</p>
+  </div>
+);
+
+const MarketplacePage = () => (
+  <div style={{ textAlign: 'center', padding: '50px' }}>
+    <h2>Marketplace</h2>
+    <p>Buy and sell meme NFTs</p>
+    <p>Coming soon...</p>
+  </div>
+);
+
+const SettingsPage = () => (
+  <div style={{ textAlign: 'center', padding: '50px' }}>
+    <h2>Settings</h2>
+    <p>Configure your account and preferences</p>
+    <p>Coming soon...</p>
+  </div>
+);
+
+const HelpPage = () => (
+  <div style={{ textAlign: 'center', padding: '50px' }}>
+    <h2>Help & Support</h2>
+    <p>Learn how to use MemeMorph</p>
+    <p>Coming soon...</p>
+  </div>
+);
+
+const MainContent = ({ activePage }) => {
   const { active, library } = useWeb3React();
   const [contracts, setContracts] = useState({ nftContract: null, tokenContract: null });
   
@@ -103,47 +190,31 @@ const MainContent = () => {
     initContracts();
   }, [active, library]);
 
+  // Render the appropriate page based on activePage
+  const renderPage = () => {
+    switch (activePage) {
+      case PAGES.HOME:
+        return <HomePage active={active} contracts={contracts} />;
+      case PAGES.COLLECTION:
+        return <CollectionPage contracts={contracts} />;
+      case PAGES.EXPLORE:
+        return <ExplorePage />;
+      case PAGES.CREATE:
+        return <CreatePage />;
+      case PAGES.MARKETPLACE:
+        return <MarketplacePage />;
+      case PAGES.SETTINGS:
+        return <SettingsPage />;
+      case PAGES.HELP:
+        return <HelpPage />;
+      default:
+        return <HomePage active={active} contracts={contracts} />;
+    }
+  };
+
   return (
     <MainContainer>
-      <WelcomeSection>
-        <WelcomeTitle>Welcome to MemeMorph</WelcomeTitle>
-        <WelcomeDescription>
-          Create, customize, and trade your own meme NFTs with AI-powered tools. 
-          Join the revolution of digital meme ownership on the blockchain.
-        </WelcomeDescription>
-        <Button>
-          {active ? 'Create Your First Meme NFT' : 'Learn More'}
-        </Button>
-      </WelcomeSection>
-      
-      {/* NFT Collection Section */}
-      <NFTCollection nftContract={contracts.nftContract} />
-      
-      <FeaturesSection>
-        <FeatureCard>
-          <FeatureIcon>✨</FeatureIcon>
-          <FeatureTitle>AI-Powered Creation</FeatureTitle>
-          <FeatureDescription>
-            Generate unique memes with our advanced AI tools. Customize templates or create entirely new designs.
-          </FeatureDescription>
-        </FeatureCard>
-        
-        <FeatureCard>
-          <FeatureIcon>🔗</FeatureIcon>
-          <FeatureTitle>Blockchain Ownership</FeatureTitle>
-          <FeatureDescription>
-            Secure your meme creations as NFTs on the blockchain. Verifiable ownership that lasts forever.
-          </FeatureDescription>
-        </FeatureCard>
-        
-        <FeatureCard>
-          <FeatureIcon>💰</FeatureIcon>
-          <FeatureTitle>Trade with MMC Tokens</FeatureTitle>
-          <FeatureDescription>
-            Buy and sell NFTs using MemeMorphCoin (MMC), our platform's native token with low transaction fees.
-          </FeatureDescription>
-        </FeatureCard>
-      </FeaturesSection>
+      {renderPage()}
     </MainContainer>
   );
 };

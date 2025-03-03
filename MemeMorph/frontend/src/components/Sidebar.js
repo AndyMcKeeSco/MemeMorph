@@ -1,5 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
+import { PAGES } from '../App';
 
 const SidebarContainer = styled.aside`
   grid-area: sidebar;
@@ -21,15 +22,12 @@ const MenuItem = styled.li`
   display: flex;
   align-items: center;
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, color 0.2s;
+  background-color: ${props => props.$isActive ? 'var(--secondary-color)' : 'transparent'};
+  color: ${props => props.$isActive ? 'white' : 'inherit'};
   
   &:hover {
-    background-color: var(--light-color);
-  }
-  
-  &.active {
-    background-color: var(--secondary-color);
-    color: white;
+    background-color: ${props => props.$isActive ? 'var(--secondary-color)' : 'var(--light-color)'};
   }
 `;
 
@@ -51,24 +49,34 @@ const Separator = styled.div`
 `;
 
 const menuItems = [
-  { icon: '🏠', label: 'Home', id: 'home' },
-  { icon: '🖼️', label: 'My Collection', id: 'collection' },
-  { icon: '🔍', label: 'Explore', id: 'explore' },
-  { icon: '✨', label: 'Create', id: 'create' },
-  { icon: '💰', label: 'Marketplace', id: 'marketplace' },
+  { icon: '🏠', label: 'Home', id: PAGES.HOME },
+  { icon: '🖼️', label: 'My Collection', id: PAGES.COLLECTION },
+  { icon: '🔍', label: 'Explore', id: PAGES.EXPLORE },
+  { icon: '✨', label: 'Create', id: PAGES.CREATE },
+  { icon: '💰', label: 'Marketplace', id: PAGES.MARKETPLACE },
 ];
 
 const settingsItems = [
-  { icon: '⚙️', label: 'Settings', id: 'settings' },
-  { icon: '❓', label: 'Help', id: 'help' },
+  { icon: '⚙️', label: 'Settings', id: PAGES.SETTINGS },
+  { icon: '❓', label: 'Help', id: PAGES.HELP },
 ];
 
-const Sidebar = ({ isOpen }) => {
+const Sidebar = ({ isOpen, activePage, onPageChange }) => {
+  const handleItemClick = (pageId) => {
+    if (onPageChange) {
+      onPageChange(pageId);
+    }
+  };
+
   return (
     <SidebarContainer $isOpen={isOpen}>
       <MenuList>
         {menuItems.map((item) => (
-          <MenuItem key={item.id}>
+          <MenuItem 
+            key={item.id} 
+            $isActive={activePage === item.id}
+            onClick={() => handleItemClick(item.id)}
+          >
             <MenuIcon $isOpen={isOpen}>{item.icon}</MenuIcon>
             <MenuText $isOpen={isOpen}>{item.label}</MenuText>
           </MenuItem>
@@ -77,7 +85,11 @@ const Sidebar = ({ isOpen }) => {
         <Separator />
         
         {settingsItems.map((item) => (
-          <MenuItem key={item.id}>
+          <MenuItem 
+            key={item.id} 
+            $isActive={activePage === item.id}
+            onClick={() => handleItemClick(item.id)}
+          >
             <MenuIcon $isOpen={isOpen}>{item.icon}</MenuIcon>
             <MenuText $isOpen={isOpen}>{item.label}</MenuText>
           </MenuItem>
