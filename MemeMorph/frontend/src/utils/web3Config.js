@@ -36,10 +36,35 @@ export const NETWORKS = {
 // Define supported networks for connector
 const supportedChainIds = Object.values(NETWORKS).map(network => network.chainId);
 
-// Initialize the Injected (MetaMask) connector
+// Initialize the Injected (MetaMask) connector with special handling for events
 export const injectedConnector = new InjectedConnector({
   supportedChainIds
 });
+
+// Apply a patch to handle the deprecated 'close' event
+// This will prevent the warning when MetaMask is connected
+if (typeof window !== 'undefined' && window.ethereum) {
+  // Store the original on method
+  const originalOn = window.ethereum.on.bind(window.ethereum);
+  const originalRemoveListener = window.ethereum.removeListener.bind(window.ethereum);
+  
+  // Override the on method to map 'close' to 'disconnect'
+  window.ethereum.on = function(eventName, listener) {
+    if (eventName === 'close') {
+      console.warn('The event "close" is deprecated. Using "disconnect" instead.');
+      return originalOn('disconnect', listener);
+    }
+    return originalOn(eventName, listener);
+  };
+  
+  // Override the removeListener method to handle the mapping correctly
+  window.ethereum.removeListener = function(eventName, listener) {
+    if (eventName === 'close') {
+      return originalRemoveListener('disconnect', listener);
+    }
+    return originalRemoveListener(eventName, listener);
+  };
+}
 
 // Default network from environment variable
 export const DEFAULT_NETWORK = process.env.REACT_APP_DEFAULT_NETWORK || 'sepolia';
