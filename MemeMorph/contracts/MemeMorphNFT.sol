@@ -4,14 +4,17 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./MemeMorphCoin.sol";
 
 /**
  * @title MemeMorphNFT
- * @dev NFT contract for the MemeMorph platform that integrates with MemeMorphCoin
+ * @dev NFT contract for the MemeMorph platform that integrates with MemeMorphCoin and allows claiming NFTs with a secret
  */
 contract MemeMorphNFT is ERC721URIStorage, Ownable {
     using Counters for Counters.Counter;
+    using ECDSA for bytes32;
+    
     Counters.Counter private _tokenIds;
     
     // Reference to the MemeMorphCoin contract
@@ -26,32 +29,47 @@ contract MemeMorphNFT is ERC721URIStorage, Ownable {
     // Creator royalties percentage (in basis points, 100 = 1%)
     uint256 public royaltyPercentage;
     
+    // Default wallet address where unclaimed NFTs are held
+    address public defaultWallet;
+    
     // Mapping of token ID to creator address
     mapping(uint256 => address) public creators;
     
+    // Mapping of token ID to claim status
+    mapping(uint256 => bool) public claimable;
+    
+    // Mapping of token ID to claim secret hash
+    mapping(uint256 => bytes32) public claimSecretHashes;
+    
     // Events
-    event NFTMinted(uint256 indexed tokenId, address indexed creator, string tokenURI);
+    event NFTMinted(uint256 indexed tokenId, address indexed creator, string tokenURI, bool isClaimable);
     event NFTTransferred(uint256 indexed tokenId, address indexed from, address indexed to, uint256 price);
-
+    event NFTClaimed(uint256 indexed tokenId, address indexed claimer);
+    
     /**
      * @dev Constructor initializes the NFT contract
      * @param coinAddress Address of the MemeMorphCoin contract
      * @param initialMintFee Initial fee for minting (in MMC tokens)
      * @param initialTransactionFee Initial fee for transactions (in MMC tokens)
+     * @param _defaultWallet Address of the default wallet to hold unclaimed NFTs
      */
     constructor(
         address coinAddress,
         uint256 initialMintFee,
-        uint256 initialTransactionFee
+        uint256 initialTransactionFee,
+        address _defaultWallet
     ) ERC721("MemeMorphNFT", "MMNFT") Ownable(msg.sender) {
+        require(_defaultWallet != address(0), "Default wallet cannot be zero address");
+        
         memeMorphCoin = MemeMorphCoin(coinAddress);
         mintFee = initialMintFee;
         transactionFee = initialTransactionFee;
         royaltyPercentage = 250; // 2.5% default royalty
+        defaultWallet = _defaultWallet;
     }
 
     /**
-     * @dev Mint a new NFT
+     * @dev Mint a new NFT directly to the caller
      * @param tokenURI The metadata URI for the NFT
      * @return The newly minted token ID
      */
@@ -69,16 +87,86 @@ contract MemeMorphNFT is ERC721URIStorage, Ownable {
         _tokenIds.increment();
         uint256 newTokenId = _tokenIds.current();
         
-        // Mint the NFT
+        // Mint the NFT to the caller
         _mint(msg.sender, newTokenId);
         _setTokenURI(newTokenId, tokenURI);
         
         // Record the creator
         creators[newTokenId] = msg.sender;
         
-        emit NFTMinted(newTokenId, msg.sender, tokenURI);
+        // This NFT is not claimable
+        claimable[newTokenId] = false;
+        
+        emit NFTMinted(newTokenId, msg.sender, tokenURI, false);
         
         return newTokenId;
+    }
+
+    /**
+     * @dev Mint a claimable NFT that will be held by the default wallet until claimed
+     * @param tokenURI The metadata URI for the NFT
+     * @param secretHash Hash of the secret that will be required to claim the NFT
+     * @return The newly minted token ID
+     */
+    function mintClaimableNFT(string memory tokenURI, bytes32 secretHash) external returns (uint256) {
+        // Collect mint fee in MemeMorphCoin
+        require(
+            memeMorphCoin.transferFrom(msg.sender, address(this), mintFee),
+            "Mint fee transfer failed"
+        );
+        
+        // Burn 50% of the mint fee
+        memeMorphCoin.burn(mintFee / 2);
+        
+        // Increment token ID counter
+        _tokenIds.increment();
+        uint256 newTokenId = _tokenIds.current();
+        
+        // Mint the NFT to the default wallet
+        _mint(defaultWallet, newTokenId);
+        _setTokenURI(newTokenId, tokenURI);
+        
+        // Record the creator
+        creators[newTokenId] = msg.sender;
+        
+        // Mark this NFT as claimable and store the secret hash
+        claimable[newTokenId] = true;
+        claimSecretHashes[newTokenId] = secretHash;
+        
+        emit NFTMinted(newTokenId, msg.sender, tokenURI, true);
+        
+        return newTokenId;
+    }
+    
+    /**
+     * @dev Claim an NFT using the secret
+     * @param tokenId The token ID to claim
+     * @param secret The secret to verify against the stored hash
+     */
+    function claimNFT(uint256 tokenId, string memory secret) external {
+        require(claimable[tokenId], "NFT is not claimable");
+        require(ownerOf(tokenId) == defaultWallet, "NFT is not in default wallet");
+        
+        // Verify the secret
+        bytes32 secretHash = keccak256(abi.encodePacked(secret, tokenId));
+        require(secretHash == claimSecretHashes[tokenId], "Invalid secret");
+        
+        // Transfer the NFT from the default wallet to the claimer
+        _transfer(defaultWallet, msg.sender, tokenId);
+        
+        // Mark as no longer claimable
+        claimable[tokenId] = false;
+        
+        emit NFTClaimed(tokenId, msg.sender);
+    }
+    
+    /**
+     * @dev Allows the contract owner to mark an NFT as no longer claimable
+     * @param tokenId The token ID to update
+     */
+    function deactivateClaim(uint256 tokenId) external onlyOwner {
+        require(claimable[tokenId], "NFT is not claimable");
+        claimable[tokenId] = false;
     }
 
     /**
@@ -145,6 +233,15 @@ contract MemeMorphNFT is ERC721URIStorage, Ownable {
     function setRoyaltyPercentage(uint256 newRoyaltyPercentage) external onlyOwner {
         require(newRoyaltyPercentage <= 1000, "Cannot exceed 10%");
         royaltyPercentage = newRoyaltyPercentage;
+    }
+    
+    /**
+     * @dev Update the default wallet for holding unclaimed NFTs
+     * @param newDefaultWallet New default wallet address
+     */
+    function setDefaultWallet(address newDefaultWallet) external onlyOwner {
+        require(newDefaultWallet != address(0), "Default wallet cannot be zero address");
+        defaultWallet = newDefaultWallet;
     }
 
     /**

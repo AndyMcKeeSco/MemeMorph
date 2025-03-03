@@ -53,6 +53,7 @@ const menuItems = [
   { icon: '🖼️', label: 'My Collection', id: PAGES.COLLECTION },
   { icon: '🔍', label: 'Explore', id: PAGES.EXPLORE },
   { icon: '✨', label: 'Create', id: PAGES.CREATE },
+  { icon: '🎫', label: 'Claim NFT', id: PAGES.CLAIM },
   { icon: '💰', label: 'Marketplace', id: PAGES.MARKETPLACE },
 ];
 

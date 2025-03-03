@@ -124,9 +124,28 @@ const NFTCollection = ({ nftContract }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  // Check if contract has required methods
+  const checkContractMethods = (contract) => {
+    if (!contract) return false;
+    
+    // Check for essential ERC721 methods
+    const hasEssentialMethods = 
+      typeof contract.balanceOf === 'function' && 
+      typeof contract.ownerOf === 'function';
+      
+    return hasEssentialMethods;
+  };
+
   useEffect(() => {
     const fetchNFTs = async () => {
       if (!active || !account || !nftContract) return;
+      
+      // Check if the contract has the required methods
+      if (!checkContractMethods(nftContract)) {
+        setError("The contract at the provided address does not implement the required ERC721 methods.");
+        setLoading(false);
+        return;
+      }
       
       try {
         setLoading(true);
@@ -143,66 +162,124 @@ const NFTCollection = ({ nftContract }) => {
         }
         
         // We need to find which NFTs the user owns
-        // Unfortunately, ERC721 doesn't have a built-in way to enumerate tokens
-        // So we'll look for NFT transfer events to this address
+        const userNFTs = [];
+        let hasTransferEvent = true;
         
-        // Get token IDs owned by the user
-        const filter = nftContract.filters.Transfer(null, account, null);
-        const events = await nftContract.queryFilter(filter);
-        
-        // Create a map to track only the current NFTs owned (in case some were transferred out)
-        const ownedNFTs = {};
-        
-        // Add NFTs transferred to the user
-        for (const event of events) {
-          const tokenId = event.args.tokenId.toString();
-          ownedNFTs[tokenId] = true;
-        }
-        
-        // Remove NFTs transferred from the user to someone else
-        const outFilter = nftContract.filters.Transfer(account, null, null);
-        const outEvents = await nftContract.queryFilter(outFilter);
-        
-        for (const event of outEvents) {
-          const tokenId = event.args.tokenId.toString();
-          delete ownedNFTs[tokenId];
-        }
-        
-        // Now fetch details for each NFT
-        const tokenIds = Object.keys(ownedNFTs);
-        const nftDetails = await Promise.all(
-          tokenIds.map(async (tokenId) => {
+        try {
+          // Check if we can use Transfer events for token enumeration
+          const filter = nftContract.filters.Transfer(null, account, null);
+          const events = await nftContract.queryFilter(filter);
+          
+          // Create a map to track only the current NFTs owned (in case some were transferred out)
+          const ownedNFTs = {};
+          
+          // Add NFTs transferred to the user
+          for (const event of events) {
+            const tokenId = event.args.tokenId.toString();
+            ownedNFTs[tokenId] = true;
+          }
+          
+          // Remove NFTs transferred from the user to someone else
+          const outFilter = nftContract.filters.Transfer(account, null, null);
+          const outEvents = await nftContract.queryFilter(outFilter);
+          
+          for (const event of outEvents) {
+            const tokenId = event.args.tokenId.toString();
+            delete ownedNFTs[tokenId];
+          }
+          
+          // Now fetch details for each NFT
+          const tokenIds = Object.keys(ownedNFTs);
+          const nftDetails = await Promise.all(
+            tokenIds.map(async (tokenId) => {
+              try {
+                // Check if we still own this NFT
+                const currentOwner = await nftContract.ownerOf(tokenId);
+                if (currentOwner.toLowerCase() !== account.toLowerCase()) {
+                  return null; // We don't own this anymore
+                }
+                
+                let tokenURI = "...";
+                try {
+                  // Get token URI if the method exists
+                  if (typeof nftContract.tokenURI === 'function') {
+                    tokenURI = await nftContract.tokenURI(tokenId);
+                  }
+                } catch (uriError) {
+                  console.log(`Error getting URI for token ${tokenId}:`, uriError.message);
+                }
+                
+                let creator = account; // Default to current user
+                try {
+                  // Get creator if the method exists
+                  if (typeof nftContract.creators === 'function') {
+                    creator = await nftContract.creators(tokenId);
+                  }
+                } catch (creatorError) {
+                  console.log(`Creator information not available for token ${tokenId}:`, creatorError.message);
+                }
+                
+                return {
+                  id: tokenId,
+                  tokenURI,
+                  creator,
+                  isCreator: creator.toLowerCase() === account.toLowerCase()
+                };
+              } catch (err) {
+                console.error(`Error fetching NFT ${tokenId}:`, err);
+                return null;
+              }
+            })
+          );
+          
+          // Filter out any null values (NFTs we couldn't fetch or don't own anymore)
+          setNfts(nftDetails.filter(nft => nft !== null));
+        } catch (eventError) {
+          console.log("Unable to use Transfer events:", eventError.message);
+          hasTransferEvent = false;
+          
+          // Fallback: Try to enumerate tokens by directly querying tokenOfOwnerByIndex if available
+          if (typeof nftContract.tokenOfOwnerByIndex === 'function') {
             try {
-              // Check if we still own this NFT
-              const currentOwner = await nftContract.ownerOf(tokenId);
-              if (currentOwner.toLowerCase() !== account.toLowerCase()) {
-                return null; // We don't own this anymore
+              const balance = await nftContract.balanceOf(account);
+              const balanceNumber = balance.toNumber();
+              
+              for (let i = 0; i < balanceNumber; i++) {
+                try {
+                  const tokenId = await nftContract.tokenOfOwnerByIndex(account, i);
+                  
+                  let tokenURI = "...";
+                  try {
+                    if (typeof nftContract.tokenURI === 'function') {
+                      tokenURI = await nftContract.tokenURI(tokenId);
+                    }
+                  } catch (uriError) {
+                    console.log(`Error getting URI for token ${tokenId}:`, uriError.message);
+                  }
+                  
+                  userNFTs.push({
+                    id: tokenId.toString(),
+                    tokenURI,
+                    creator: account, // Default to current user
+                    isCreator: true
+                  });
+                } catch (indexError) {
+                  console.error(`Error at index ${i}:`, indexError);
+                }
               }
               
-              // Get token URI
-              const tokenURI = await nftContract.tokenURI(tokenId);
-              
-              // Get creator
-              const creator = await nftContract.creators(tokenId);
-              
-              return {
-                id: tokenId,
-                tokenURI,
-                creator,
-                isCreator: creator.toLowerCase() === account.toLowerCase()
-              };
-            } catch (err) {
-              console.error(`Error fetching NFT ${tokenId}:`, err);
-              return null;
+              setNfts(userNFTs);
+            } catch (enumError) {
+              console.error("Error enumerating tokens:", enumError);
+              setError("Unable to list your NFTs. The contract may not support enumeration.");
             }
-          })
-        );
-        
-        // Filter out any null values (NFTs we couldn't fetch or don't own anymore)
-        setNfts(nftDetails.filter(nft => nft !== null));
+          } else {
+            setError("Unable to enumerate your NFTs. The contract does not support the required methods.");
+          }
+        }
       } catch (err) {
         console.error("Error fetching NFTs:", err);
-        setError("Failed to load your NFT collection. Please try again later.");
+        setError(`Failed to load your NFT collection: ${err.message}`);
       } finally {
         setLoading(false);
       }
@@ -216,84 +293,153 @@ const NFTCollection = ({ nftContract }) => {
     
     setLoading(true);
     setNfts([]);
+    setError(null);
     
-    const fetchNFTs = async () => {
-      try {
-        setError(null);
-        
-        // Get the NFT balance (how many NFTs the user owns)
-        const balance = await nftContract.balanceOf(account);
-        const balanceNumber = balance.toNumber();
-        
-        if (balanceNumber === 0) {
-          setNfts([]);
-          setLoading(false);
-          return;
-        }
-        
-        // Get token IDs owned by the user
-        const filter = nftContract.filters.Transfer(null, account, null);
-        const events = await nftContract.queryFilter(filter);
-        
-        // Create a map to track only the current NFTs owned (in case some were transferred out)
-        const ownedNFTs = {};
-        
-        // Add NFTs transferred to the user
-        for (const event of events) {
-          const tokenId = event.args.tokenId.toString();
-          ownedNFTs[tokenId] = true;
-        }
-        
-        // Remove NFTs transferred from the user to someone else
-        const outFilter = nftContract.filters.Transfer(account, null, null);
-        const outEvents = await nftContract.queryFilter(outFilter);
-        
-        for (const event of outEvents) {
-          const tokenId = event.args.tokenId.toString();
-          delete ownedNFTs[tokenId];
-        }
-        
-        // Now fetch details for each NFT
-        const tokenIds = Object.keys(ownedNFTs);
-        const nftDetails = await Promise.all(
-          tokenIds.map(async (tokenId) => {
-            try {
-              // Check if we still own this NFT
-              const currentOwner = await nftContract.ownerOf(tokenId);
-              if (currentOwner.toLowerCase() !== account.toLowerCase()) {
-                return null; // We don't own this anymore
-              }
-              
-              // Get token URI
-              const tokenURI = await nftContract.tokenURI(tokenId);
-              
-              // Get creator
-              const creator = await nftContract.creators(tokenId);
-              
-              return {
-                id: tokenId,
-                tokenURI,
-                creator,
-                isCreator: creator.toLowerCase() === account.toLowerCase()
-              };
-            } catch (err) {
-              console.error(`Error fetching NFT ${tokenId}:`, err);
-              return null;
+    // Re-run the fetch logic
+    setTimeout(() => {
+      const fetchNFTs = async () => {
+        try {
+          // Get the NFT balance (how many NFTs the user owns)
+          const balance = await nftContract.balanceOf(account);
+          const balanceNumber = balance.toNumber();
+          
+          if (balanceNumber === 0) {
+            setNfts([]);
+            setLoading(false);
+            return;
+          }
+          
+          // We need to find which NFTs the user owns
+          const userNFTs = [];
+          let hasTransferEvent = true;
+          
+          try {
+            // Check if we can use Transfer events for token enumeration
+            const filter = nftContract.filters.Transfer(null, account, null);
+            const events = await nftContract.queryFilter(filter);
+            
+            // Create a map to track only the current NFTs owned (in case some were transferred out)
+            const ownedNFTs = {};
+            
+            // Add NFTs transferred to the user
+            for (const event of events) {
+              const tokenId = event.args.tokenId.toString();
+              ownedNFTs[tokenId] = true;
             }
-          })
-        );
-        
-        // Filter out any null values (NFTs we couldn't fetch or don't own anymore)
-        setNfts(nftDetails.filter(nft => nft !== null));
-      } catch (err) {
-        console.error("Error fetching NFTs:", err);
-        setError("Failed to load your NFT collection. Please try again later.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    
-    fetchNFTs();
+            
+            // Remove NFTs transferred from the user to someone else
+            const outFilter = nftContract.filters.Transfer(account, null, null);
+            const outEvents = await nftContract.queryFilter(outFilter);
+            
+            for (const event of outEvents) {
+              const tokenId = event.args.tokenId.toString();
+              delete ownedNFTs[tokenId];
+            }
+            
+            // Now fetch details for each NFT
+            const tokenIds = Object.keys(ownedNFTs);
+            const nftDetails = await Promise.all(
+              tokenIds.map(async (tokenId) => {
+                try {
+                  // Check if we still own this NFT
+                  const currentOwner = await nftContract.ownerOf(tokenId);
+                  if (currentOwner.toLowerCase() !== account.toLowerCase()) {
+                    return null; // We don't own this anymore
+                  }
+                  
+                  let tokenURI = "...";
+                  try {
+                    // Get token URI if the method exists
+                    if (typeof nftContract.tokenURI === 'function') {
+                      // Add a staticCall option to avoid state changes, which might help prevent execution reverts
+                      const callOptions = { from: account };
+                      tokenURI = await nftContract.tokenURI(tokenId, callOptions);
+                    }
+                  } catch (uriError) {
+                    console.log(`Error getting URI for token ${tokenId}:`, uriError.message);
+                    // Continue with default value instead of failing
+                  }
+                  
+                  let creator = account; // Default to current user
+                  try {
+                    // Get creator if the method exists
+                    if (typeof nftContract.creators === 'function') {
+                      const callOptions = { from: account };
+                      creator = await nftContract.creators(tokenId, callOptions);
+                    }
+                  } catch (creatorError) {
+                    console.log(`Creator information not available for token ${tokenId}:`, creatorError.message);
+                    // Continue with default value (current account) instead of failing
+                  }
+                  
+                  return {
+                    id: tokenId,
+                    tokenURI,
+                    creator,
+                    isCreator: creator.toLowerCase() === account.toLowerCase()
+                  };
+                } catch (err) {
+                  console.error(`Error fetching NFT ${tokenId}:`, err);
+                  return null;
+                }
+              })
+            );
+            
+            // Filter out any null values (NFTs we couldn't fetch or don't own anymore)
+            setNfts(nftDetails.filter(nft => nft !== null));
+          } catch (eventError) {
+            console.log("Unable to use Transfer events:", eventError.message);
+            hasTransferEvent = false;
+            
+            // Fallback: Try to enumerate tokens by directly querying tokenOfOwnerByIndex if available
+            if (typeof nftContract.tokenOfOwnerByIndex === 'function') {
+              try {
+                const balance = await nftContract.balanceOf(account);
+                const balanceNumber = balance.toNumber();
+                
+                for (let i = 0; i < balanceNumber; i++) {
+                  try {
+                    const tokenId = await nftContract.tokenOfOwnerByIndex(account, i);
+                    
+                    let tokenURI = "...";
+                    try {
+                      if (typeof nftContract.tokenURI === 'function') {
+                        tokenURI = await nftContract.tokenURI(tokenId);
+                      }
+                    } catch (uriError) {
+                      console.log(`Error getting URI for token ${tokenId}:`, uriError.message);
+                    }
+                    
+                    userNFTs.push({
+                      id: tokenId.toString(),
+                      tokenURI,
+                      creator: account, // Default to current user
+                      isCreator: true
+                    });
+                  } catch (indexError) {
+                    console.error(`Error at index ${i}:`, indexError);
+                  }
+                }
+                
+                setNfts(userNFTs);
+              } catch (enumError) {
+                console.error("Error enumerating tokens:", enumError);
+                setError("Unable to list your NFTs. The contract may not support enumeration.");
+              }
+            } else {
+              setError("Unable to enumerate your NFTs. The contract does not support the required methods.");
+            }
+          }
+        } catch (err) {
+          console.error("Error fetching NFTs:", err);
+          setError(`Failed to load your NFT collection: ${err.message}`);
+        } finally {
+          setLoading(false);
+        }
+      };
+      
+      fetchNFTs();
+    }, 100);
   };
 
   if (!active) {
@@ -351,8 +497,15 @@ const NFTCollection = ({ nftContract }) => {
                 <NFTName>MemeMorph #{nft.id}</NFTName>
                 <NFTId>Token ID: {nft.id}</NFTId>
                 <NFTMetadata>
-                  <span>Creator: {nft.isCreator ? 'You' : `${nft.creator.substring(0, 6)}...${nft.creator.substring(nft.creator.length - 4)}`}</span>
-                  <span>URI: {nft.tokenURI.substring(0, 20)}...</span>
+                  <span>Creator: {nft.isCreator ? 'You' : 
+                    (typeof nft.creator === 'string' ? 
+                      `${nft.creator.substring(0, 6)}...${nft.creator.substring(nft.creator.length - 4)}` : 
+                      'Unknown')
+                  }</span>
+                  <span>URI: {typeof nft.tokenURI === 'string' && nft.tokenURI.length > 20 ? 
+                    `${nft.tokenURI.substring(0, 20)}...` : 
+                    nft.tokenURI || 'Not available'
+                  }</span>
                 </NFTMetadata>
                 <ActionButton>View Details</ActionButton>
               </NFTInfo>

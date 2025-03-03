@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useWeb3React } from '@web3-react/core';
 import NFTCollection from './NFTCollection';
+import ClaimNFT from './ClaimNFT';
 import { getContracts } from '../utils/web3Config';
 import { PAGES } from '../constants';
 
@@ -144,6 +145,10 @@ const CreatePage = () => (
   </div>
 );
 
+const ClaimPage = ({ contracts }) => (
+  <ClaimNFT nftContract={contracts.nftContract} />
+);
+
 const MarketplacePage = () => (
   <div style={{ textAlign: 'center', padding: '50px' }}>
     <h2>Marketplace</h2>
@@ -201,6 +206,8 @@ const MainContent = ({ activePage }) => {
         return <ExplorePage />;
       case PAGES.CREATE:
         return <CreatePage />;
+      case PAGES.CLAIM:
+        return <ClaimPage contracts={contracts} />;
       case PAGES.MARKETPLACE:
         return <MarketplacePage />;
       case PAGES.SETTINGS:

@@ -41,18 +41,23 @@ export const injectedConnector = new InjectedConnector({
   supportedChainIds
 });
 
-// Apply a patch to handle the deprecated 'close' event
-// This will prevent the warning when MetaMask is connected
+// Apply patches to handle deprecated MetaMask methods and events
+// This will prevent warnings when MetaMask is connected
 if (typeof window !== 'undefined' && window.ethereum) {
-  // Store the original on method
+  // Store the original methods
   const originalOn = window.ethereum.on.bind(window.ethereum);
   const originalRemoveListener = window.ethereum.removeListener.bind(window.ethereum);
+  const originalSend = window.ethereum.send?.bind(window.ethereum);
   
-  // Override the on method to map 'close' to 'disconnect'
+  // Override the on method to map deprecated events
   window.ethereum.on = function(eventName, listener) {
     if (eventName === 'close') {
       console.warn('The event "close" is deprecated. Using "disconnect" instead.');
       return originalOn('disconnect', listener);
+    }
+    if (eventName === 'networkChanged') {
+      console.warn('The event "networkChanged" is deprecated. Using "chainChanged" instead.');
+      return originalOn('chainChanged', listener);
     }
     return originalOn(eventName, listener);
   };
@@ -62,16 +67,33 @@ if (typeof window !== 'undefined' && window.ethereum) {
     if (eventName === 'close') {
       return originalRemoveListener('disconnect', listener);
     }
+    if (eventName === 'networkChanged') {
+      return originalRemoveListener('chainChanged', listener);
+    }
     return originalRemoveListener(eventName, listener);
   };
+  
+  // Patch the send method to use request instead
+  if (typeof window.ethereum.send === 'function') {
+    window.ethereum.send = function(method, params) {
+      if (typeof method === 'string') {
+        console.warn('ethereum.send(...) is deprecated. Using ethereum.request(...) instead.');
+        return window.ethereum.request({ method, params });
+      } else {
+        // Handle the case where first parameter is an object
+        console.warn('ethereum.send(...) is deprecated. Using ethereum.request(...) instead.');
+        return window.ethereum.request(method);
+      }
+    };
+  }
 }
 
 // Default network from environment variable
 export const DEFAULT_NETWORK = process.env.REACT_APP_DEFAULT_NETWORK || 'sepolia';
 
-// Contract addresses from environment variables
-export const NFT_CONTRACT_ADDRESS = process.env.REACT_APP_NFT_CONTRACT_ADDRESS;
-export const TOKEN_CONTRACT_ADDRESS = process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS;
+// Contract addresses - hardcoded until environment variables are set up
+export const NFT_CONTRACT_ADDRESS = '0x80D97cccf37c95493057A492A7D667A74f57F5cc';
+export const TOKEN_CONTRACT_ADDRESS = process.env.REACT_APP_TOKEN_CONTRACT_ADDRESS || '0x0000000000000000000000000000000000000000';
 
 // Get network configuration by network ID
 export const getNetworkById = (chainId) => {

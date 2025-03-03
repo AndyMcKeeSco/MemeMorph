@@ -4,6 +4,7 @@ export const PAGES = {
   COLLECTION: 'collection',
   EXPLORE: 'explore',
   CREATE: 'create',
+  CLAIM: 'claim',
   MARKETPLACE: 'marketplace',
   SETTINGS: 'settings',
   HELP: 'help'

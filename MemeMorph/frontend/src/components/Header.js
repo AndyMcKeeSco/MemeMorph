@@ -76,15 +76,27 @@ const NetworkBadge = styled.div`
 
 const DropdownMenu = styled.div`
   position: absolute;
-  top: 50px;
+  top: 60px;
   right: 20px;
   background: white;
   border-radius: 4px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
   padding: 10px 0;
-  min-width: 200px;
-  z-index: 100;
+  min-width: 220px;
+  z-index: 1000;
   display: ${props => props.$isVisible ? 'block' : 'none'};
+  
+  &:before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    right: 30px;
+    width: 16px;
+    height: 16px;
+    background: white;
+    transform: rotate(45deg);
+    box-shadow: -2px -2px 5px rgba(0, 0, 0, 0.04);
+  }
 `;
 
 const DropdownItem = styled.div`
@@ -149,10 +161,17 @@ const Header = ({ toggleSidebar }) => {
   // Effect to fetch all available accounts from MetaMask
   useEffect(() => {
     const fetchAccounts = async () => {
-      if (isMetaMaskInstalled && active) {
+      if (isMetaMaskInstalled) {
         try {
-          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-          setAvailableAccounts(accounts);
+          // Try to get all accounts, not just the connected ones
+          // This requires user interaction, so we'll only do it when it's prompted
+          let accounts = [];
+          
+          if (active) {
+            // If already connected, get the accounts that are available
+            accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            setAvailableAccounts(accounts);
+          }
         } catch (error) {
           console.error('Error fetching accounts:', error);
         }
@@ -160,7 +179,12 @@ const Header = ({ toggleSidebar }) => {
     };
     
     fetchAccounts();
-  }, [isMetaMaskInstalled, active]);
+    
+    // Also refresh accounts when the dropdown is opened
+    if (menuOpen && isMetaMaskInstalled) {
+      fetchAccounts();
+    }
+  }, [isMetaMaskInstalled, active, menuOpen]);
 
   // Listen for account changes
   useEffect(() => {
@@ -176,6 +200,16 @@ const Header = ({ toggleSidebar }) => {
         } else {
           // Update available accounts
           setAvailableAccounts(accounts);
+          
+          // If we have accounts but current account is not among them,
+          // use the first available account to avoid disconnect state
+          if (accounts.length > 0 && 
+              account && 
+              !accounts.find(acc => acc.toLowerCase() === account.toLowerCase())) {
+            // This will trigger a re-render with the first available account
+            // No need to call activate() as MetaMask has already done that
+            console.log('Account changed to:', accounts[0]);
+          }
         }
       };
       
@@ -247,7 +281,10 @@ const Header = ({ toggleSidebar }) => {
     }
   };
 
-  const handleWalletClick = () => {
+  const handleWalletClick = (e) => {
+    // Prevent the click event from propagating
+    e.stopPropagation();
+    
     if (active) {
       setMenuOpen(!menuOpen);
     } else {
@@ -271,12 +308,25 @@ const Header = ({ toggleSidebar }) => {
   
   // Close menu when clicking outside
   useEffect(() => {
-    const handleClickOutside = () => {
-      setMenuOpen(false);
+    const handleClickOutside = (event) => {
+      // Only close if the click was outside the dropdown and wallet button
+      const target = event.target;
+      const dropdown = document.getElementById('wallet-dropdown');
+      const walletButton = document.getElementById('wallet-button');
+      
+      if (dropdown && walletButton && 
+          !dropdown.contains(target) && 
+          !walletButton.contains(target)) {
+        setMenuOpen(false);
+      }
     };
     
     if (menuOpen) {
-      document.addEventListener('click', handleClickOutside);
+      // Use a small timeout to ensure the click that opened the menu
+      // doesn't immediately close it
+      setTimeout(() => {
+        document.addEventListener('click', handleClickOutside);
+      }, 100);
     }
     
     return () => {
@@ -303,6 +353,7 @@ const Header = ({ toggleSidebar }) => {
         )}
         
         <WalletButton 
+          id="wallet-button"
           $isConnected={active}
           onClick={handleWalletClick}
           disabled={connecting}
@@ -322,7 +373,7 @@ const Header = ({ toggleSidebar }) => {
         </WalletButton>
         
         {active && (
-          <DropdownMenu $isVisible={menuOpen} onClick={(e) => e.stopPropagation()}>
+          <DropdownMenu id="wallet-dropdown" $isVisible={menuOpen} onClick={(e) => e.stopPropagation()}>
             {/* Current Account Info */}
             <DropdownItem>
               <strong>Account:</strong> {shortenAddress(account)}
@@ -359,11 +410,17 @@ const Header = ({ toggleSidebar }) => {
                             }],
                           });
                           
-                          // Manually select the account in MetaMask
+                          // The proper way to switch accounts is to show the MetaMask UI
+                          // This will allow the user to select the account manually
                           await window.ethereum.request({
-                            method: 'eth_requestAccounts',
-                            params: [{ eth_accounts: [acc] }]
+                            method: 'wallet_requestPermissions',
+                            params: [{
+                              eth_accounts: {}
+                            }]
                           });
+                          
+                          // MetaMask will handle the account switching via its UI
+                          // We don't need to call a specific API for this
                           
                           // Close the menu
                           setMenuOpen(false);
@@ -379,6 +436,90 @@ const Header = ({ toggleSidebar }) => {
                   >
                     {shortenAddress(acc)}
                     {acc.toLowerCase() === account.toLowerCase() && ' (Current)'}
+                  </DropdownItem>
+                ))}
+              </>
+            )}
+            
+            {/* Switch Wallet Option */}
+            <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #eee' }} />
+            <DropdownItem style={{ fontWeight: 'bold' }}>
+              Wallet Options
+            </DropdownItem>
+            
+            <DropdownItem onClick={async () => {
+              try {
+                // Get all accounts from MetaMask
+                const accounts = await window.ethereum.request({ 
+                  method: 'eth_requestAccounts' 
+                });
+                setAvailableAccounts(accounts);
+                
+                // Show MetaMask wallet selection UI
+                await window.ethereum.request({
+                  method: 'wallet_requestPermissions',
+                  params: [{
+                    eth_accounts: {}
+                  }]
+                });
+                setMenuOpen(false);
+              } catch (error) {
+                console.error('Failed to open wallet selection:', error);
+              }
+            }}>
+              Switch Wallet Account
+            </DropdownItem>
+            
+            {/* Available Accounts Section */}
+            {availableAccounts.length > 0 && (
+              <>
+                <DropdownItem style={{ fontWeight: 'bold', marginTop: '8px' }}>
+                  Available Accounts
+                </DropdownItem>
+                
+                {availableAccounts.map((acc) => (
+                  <DropdownItem 
+                    key={acc}
+                    onClick={async () => {
+                      // Only trigger a switch if this isn't the current account
+                      if (acc.toLowerCase() !== account.toLowerCase()) {
+                        try {
+                          // Show the permissions UI to select this account
+                          await window.ethereum.request({
+                            method: 'wallet_requestPermissions',
+                            params: [{
+                              eth_accounts: {}
+                            }]
+                          });
+                          
+                          // The user will select the account in the MetaMask UI
+                          setMenuOpen(false);
+                        } catch (error) {
+                          console.error('Failed to switch account:', error);
+                        }
+                      }
+                    }}
+                    style={{
+                      backgroundColor: acc.toLowerCase() === account.toLowerCase() ? '#f5f9ff' : 'transparent',
+                      fontWeight: acc.toLowerCase() === account.toLowerCase() ? 'bold' : 'normal',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}
+                  >
+                    <span>{shortenAddress(acc)}</span>
+                    {acc.toLowerCase() === account.toLowerCase() && (
+                      <span style={{ 
+                        backgroundColor: 'var(--success-color)', 
+                        color: 'white', 
+                        fontSize: '0.7rem',
+                        padding: '2px 6px',
+                        borderRadius: '10px',
+                        marginLeft: '8px'
+                      }}>
+                        Active
+                      </span>
+                    )}
                   </DropdownItem>
                 ))}
               </>
