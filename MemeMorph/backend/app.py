@@ -10,6 +10,7 @@ import json
 import uuid
 import logging
 from datetime import datetime
+from database import get_db, Database
 
 # Set up logging
 logging.basicConfig(level=logging.INFO,
