@@ -112,6 +112,7 @@ const Header = ({ toggleSidebar }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentNetwork, setCurrentNetwork] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
+  const [availableAccounts, setAvailableAccounts] = useState([]);
 
   // Check if MetaMask is installed
   const isMetaMaskInstalled = typeof window !== 'undefined' && window.ethereum;
@@ -145,6 +146,22 @@ const Header = ({ toggleSidebar }) => {
     getBalance();
   }, [active, library, account]);
 
+  // Effect to fetch all available accounts from MetaMask
+  useEffect(() => {
+    const fetchAccounts = async () => {
+      if (isMetaMaskInstalled && active) {
+        try {
+          const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+          setAvailableAccounts(accounts);
+        } catch (error) {
+          console.error('Error fetching accounts:', error);
+        }
+      }
+    };
+    
+    fetchAccounts();
+  }, [isMetaMaskInstalled, active]);
+
   // Listen for account changes
   useEffect(() => {
     if (window.ethereum) {
@@ -156,6 +173,9 @@ const Header = ({ toggleSidebar }) => {
         if (accounts.length === 0) {
           // User disconnected their wallet
           deactivate();
+        } else {
+          // Update available accounts
+          setAvailableAccounts(accounts);
         }
       };
       
@@ -185,6 +205,15 @@ const Header = ({ toggleSidebar }) => {
     
     setConnecting(true);
     try {
+      // Request accounts from MetaMask - this will prompt the user if needed
+      const accounts = await window.ethereum.request({ 
+        method: 'eth_requestAccounts'
+      });
+      
+      // Set available accounts
+      setAvailableAccounts(accounts);
+      
+      // Activate Web3React with injected connector
       await activate(injectedConnector);
       
       // Check if we need to switch networks
@@ -294,6 +323,7 @@ const Header = ({ toggleSidebar }) => {
         
         {active && (
           <DropdownMenu $isVisible={menuOpen} onClick={(e) => e.stopPropagation()}>
+            {/* Current Account Info */}
             <DropdownItem>
               <strong>Account:</strong> {shortenAddress(account)}
             </DropdownItem>
@@ -306,18 +336,71 @@ const Header = ({ toggleSidebar }) => {
               <strong>Network:</strong> {currentNetwork?.name || 'Unknown'}
             </DropdownItem>
             
+            {/* Available Accounts Section */}
+            {availableAccounts.length > 1 && (
+              <>
+                <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #eee' }} />
+                <DropdownItem style={{ fontWeight: 'bold' }}>
+                  Switch Account
+                </DropdownItem>
+                
+                {availableAccounts.map((acc) => (
+                  <DropdownItem 
+                    key={acc}
+                    onClick={async () => {
+                      // Only trigger a switch if this isn't the current account
+                      if (acc.toLowerCase() !== account.toLowerCase()) {
+                        try {
+                          // This will refresh the Web3React context with the new account
+                          await window.ethereum.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ 
+                              chainId: window.ethereum.chainId 
+                            }],
+                          });
+                          
+                          // Manually select the account in MetaMask
+                          await window.ethereum.request({
+                            method: 'eth_requestAccounts',
+                            params: [{ eth_accounts: [acc] }]
+                          });
+                          
+                          // Close the menu
+                          setMenuOpen(false);
+                        } catch (error) {
+                          console.error('Failed to switch account:', error);
+                        }
+                      }
+                    }}
+                    style={{
+                      backgroundColor: acc.toLowerCase() === account.toLowerCase() ? '#f5f9ff' : 'transparent',
+                      fontWeight: acc.toLowerCase() === account.toLowerCase() ? 'bold' : 'normal'
+                    }}
+                  >
+                    {shortenAddress(acc)}
+                    {acc.toLowerCase() === account.toLowerCase() && ' (Current)'}
+                  </DropdownItem>
+                ))}
+              </>
+            )}
+            
+            {/* Network Selection */}
             <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #eee' }} />
+            <DropdownItem style={{ fontWeight: 'bold' }}>
+              Switch Network
+            </DropdownItem>
             
             <DropdownItem onClick={() => switchToNetwork('local')}>
-              Switch to Local Testnet
+              Local Testnet
             </DropdownItem>
             <DropdownItem onClick={() => switchToNetwork('sepolia')}>
-              Switch to Sepolia Testnet
+              Sepolia Testnet
             </DropdownItem>
             <DropdownItem onClick={() => switchToNetwork('goerli')}>
-              Switch to Goerli Testnet
+              Goerli Testnet
             </DropdownItem>
             
+            {/* Disconnect Option */}
             <hr style={{ margin: '8px 0', border: 'none', borderTop: '1px solid #eee' }} />
             
             <DropdownItem onClick={disconnectWallet}>
