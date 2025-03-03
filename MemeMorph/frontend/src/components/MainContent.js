@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { useWeb3React } from '@web3-react/core';
+import NFTCollection from './NFTCollection';
+import { getContracts } from '../utils/web3Config';
 
 const MainContainer = styled.main`
   grid-area: main;
@@ -80,7 +82,26 @@ const FeatureDescription = styled.p`
 `;
 
 const MainContent = () => {
-  const { active } = useWeb3React();
+  const { active, library } = useWeb3React();
+  const [contracts, setContracts] = useState({ nftContract: null, tokenContract: null });
+  
+  // Initialize contracts when wallet is connected
+  useEffect(() => {
+    const initContracts = async () => {
+      if (active && library) {
+        try {
+          const { nftContract, tokenContract } = await getContracts(library);
+          setContracts({ nftContract, tokenContract });
+        } catch (error) {
+          console.error("Failed to initialize contracts:", error);
+        }
+      } else {
+        setContracts({ nftContract: null, tokenContract: null });
+      }
+    };
+    
+    initContracts();
+  }, [active, library]);
 
   return (
     <MainContainer>
@@ -94,6 +115,9 @@ const MainContent = () => {
           {active ? 'Create Your First Meme NFT' : 'Learn More'}
         </Button>
       </WelcomeSection>
+      
+      {/* NFT Collection Section */}
+      <NFTCollection nftContract={contracts.nftContract} />
       
       <FeaturesSection>
         <FeatureCard>
