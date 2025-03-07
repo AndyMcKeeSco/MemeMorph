@@ -437,73 +437,83 @@ def handle_question_options():
 
 @app.route('/api/world/question', methods=['POST'])
 def answer_world_question():
-    """Answer questions about the fictional world using AI"""
-    # Log the incoming request
-    logger.info(f"Received question request: {request.data}")
-    
-    # Try to decode the raw JSON first to debug the issue
+    """Answer questions about the fictional world using AI with vector DB context"""
     try:
-        if request.data:
-            import json
-            raw_json_string = request.data.decode('utf-8')
-            logger.info(f"Raw JSON string: {raw_json_string}")
-            # Try manual parsing to validate
-            parsed_data = json.loads(raw_json_string)
-            logger.info(f"Successfully parsed manually: {parsed_data}")
-    except Exception as e:
-        logger.error(f"Error in manual JSON parsing: {str(e)}")
-    
-    # Ensure we have JSON data
-    try:
-        data = request.get_json(force=True)  # Use force=True to ignore content-type
-        if data is None:
-            logger.error("No JSON data received")
+        data = request.get_json(force=True)
+        if not data:
             return jsonify({"error": "No JSON data received"}), 400
-    except Exception as e:
-        logger.error(f"Error parsing JSON: {str(e)}")
-        return jsonify({"error": f"Error parsing JSON: {str(e)}"}), 400
-    
-    if not data or 'question' not in data or 'world_description' not in data:
-        return jsonify({"error": "Both question and world description are required"}), 400
-    
-    question = data['question']
-    world_description = data['world_description']
-    
-    if not OPENAI_API_KEY or OPENAI_API_KEY == 'your_openai_api_key_here':
-        # Provide mock data if no API key is available
-        logger.info("No OpenAI API key configured, returning mock response")
         
-        # For steampunk world communication question, provide a more specific mock answer
-        if "steampunk" in world_description.lower() and "communicat" in question.lower():
+        # Check required fields
+        if 'question' not in data:
+            return jsonify({"error": "Question is required"}), 400
+            
+        question = data['question']
+        world_id = data.get('world_id')
+        
+        # If world_description is provided directly, use it (legacy support)
+        # Otherwise, get context from CanonVDB if world_id is provided
+        if 'world_description' in data:
+            # Legacy mode
+            world_description = data['world_description']
+            context = world_description
+            sources = []
+        elif world_id:
+            # New mode with vector DB
+            from canon_vdb import CanonVDB
+            vdb = CanonVDB()
+            context, sources = vdb.search_for_world_explorer(question, world_id, n_results=3)
+            
+            # If no context found, return error
+            if not context:
+                return jsonify({
+                    "error": f"No context found for world {world_id}. Please create the world first."
+                }), 404
+        else:
             return jsonify({
-                "answer": "In this steampunk world without electricity, long-distance communication relies on advanced steam technology. People use elaborate networks of pneumatic tubes to send physical messages between buildings and across cities. For greater distances, they employ a system of steam-powered semaphore towers with mechanical signaling arms visible from miles away. The wealthiest citizens might use personal mechanical carrier pigeons - intricate brass and copper automatons that can deliver small messages between pre-programmed locations. Submarine telegraph cables also exist, using steam-powered pressure differentials rather than electricity to transmit coded messages across oceans. Voice communication happens through sophisticated acoustic horns and tubes that can amplify and direct sound over moderate distances.",
-                "question": question
+                "error": "Either world_description or world_id must be provided"
+            }), 400
+        
+        # If no OpenAI API key, provide mock responses
+        if not OPENAI_API_KEY or OPENAI_API_KEY == 'your_openai_api_key_here':
+            logger.info("No OpenAI API key configured, returning mock response")
+            
+            # For steampunk world communication question, provide a more specific mock answer
+            if "steampunk" in context.lower() and "communicat" in question.lower():
+                return jsonify({
+                    "answer": "In this steampunk world without electricity, long-distance communication relies on advanced steam technology. People use elaborate networks of pneumatic tubes to send physical messages between buildings and across cities. For greater distances, they employ a system of steam-powered semaphore towers with mechanical signaling arms visible from miles away. The wealthiest citizens might use personal mechanical carrier pigeons - intricate brass and copper automatons that can deliver small messages between pre-programmed locations. Submarine telegraph cables also exist, using steam-powered pressure differentials rather than electricity to transmit coded messages across oceans. Voice communication happens through sophisticated acoustic horns and tubes that can amplify and direct sound over moderate distances.",
+                    "question": question,
+                    "sources": [s["metadata"].get("title") for s in sources] if sources else []
+                })
+            
+            # Generic mock response for other questions
+            return jsonify({
+                "answer": f"I would answer your question about '{question}' related to the world you described, but the AI service is not configured with a valid API key. This is a placeholder response for development.",
+                "question": question,
+                "sources": [s["metadata"].get("title") for s in sources] if sources else []
             })
         
-        # Generic mock response for other questions
-        return jsonify({
-            "answer": f"I would answer your question about '{question}' related to the world you described, but the AI service is not configured with a valid API key. This is a placeholder response for development.",
-            "question": question
-        })
-    
-    try:
         # Set up the prompt for the AI
         system_prompt = """
         You are a helpful lore expert for fictional worlds. Given a description of a fictional world 
-        and a question about that world, provide a detailed and creative answer that's consistent 
-        with the world's established facts. If the question asks about something not explicitly 
-        mentioned in the world description, invent a plausible answer that would fit with the world's 
-        theme, technology level, magic system, or social structures.
+        and relevant information, answer the user's question about that world. Your answers should be:
+        1. Consistent with the provided world context and information
+        2. Creative but plausible within the established world
+        3. Detailed and informative (3-4 paragraphs)
+        4. Focused on answering the specific question
         
-        Keep your answer concise (around 3-4 paragraphs) but informative.
+        The context will contain:
+        - The main world description/context
+        - Additional relevant lore that you should use to enhance your answer
+        
+        If information seems contradictory, prioritize specific lore entries over the general world context.
         """
         
         user_prompt = f"""
-        World Description:
-        {world_description}
-        
-        Question:
+        # User Question
         {question}
+        
+        # World Information
+        {context}
         """
         
         # Call OpenAI API
@@ -528,10 +538,22 @@ def answer_world_question():
             result = response.json()
             answer = result["choices"][0]["message"]["content"]
             
-            return jsonify({
+            # Return answer with sources if available
+            response_data = {
                 "answer": answer,
                 "question": question
-            })
+            }
+            
+            if sources:
+                response_data["sources"] = [
+                    {
+                        "title": s["metadata"].get("title", "Unnamed Source"),
+                        "category": s["metadata"].get("category", "general")
+                    }
+                    for s in sources
+                ]
+            
+            return jsonify(response_data)
         else:
             logger.error(f"AI API error: {response.status_code}, {response.text}")
             return jsonify({"error": "Failed to generate answer"}), 500
@@ -633,6 +655,207 @@ def generate_character_claim(character_id):
         "claim_secret": claim_data["secret"],
         "claim_hash": claim_data["hash"]
     })
+
+# Canon Lore Management API Routes
+@app.route('/api/world/lore', methods=['GET'])
+def list_lore_entries():
+    """List lore entries with optional filtering"""
+    world_id = request.args.get('world_id')
+    category = request.args.get('category')
+    limit = int(request.args.get('limit', 100))
+    offset = int(request.args.get('offset', 0))
+    
+    try:
+        from canon_vdb import CanonVDB
+        vdb = CanonVDB()
+        entries = vdb.list_lore_entries(
+            world_id=world_id,
+            category=category,
+            limit=limit,
+            offset=offset
+        )
+        return jsonify({"entries": entries})
+    except Exception as e:
+        logger.error(f"Error listing lore entries: {str(e)}")
+        return jsonify({"error": f"Failed to list lore entries: {str(e)}"}), 500
+
+@app.route('/api/world/lore/<entry_id>', methods=['GET'])
+def get_lore_entry(entry_id):
+    """Get a specific lore entry by ID"""
+    try:
+        from canon_vdb import CanonVDB
+        vdb = CanonVDB()
+        entry = vdb.get_lore_by_id(entry_id)
+        
+        if not entry:
+            return jsonify({"error": "Lore entry not found"}), 404
+            
+        return jsonify(entry)
+    except Exception as e:
+        logger.error(f"Error getting lore entry {entry_id}: {str(e)}")
+        return jsonify({"error": f"Failed to get lore entry: {str(e)}"}), 500
+
+@app.route('/api/world/lore', methods=['POST'])
+def create_lore_entry():
+    """Create a new lore entry"""
+    data = request.json
+    
+    if not data or 'title' not in data or 'content' not in data:
+        return jsonify({"error": "Title and content are required"}), 400
+    
+    try:
+        from canon_vdb import CanonVDB
+        from datetime import datetime
+        
+        vdb = CanonVDB()
+        entry_id = vdb.add_lore_entry(
+            title=data['title'],
+            content=data['content'],
+            category=data.get('category', 'general'),
+            world_id=data.get('world_id', 'default'),
+            metadata=data.get('metadata', {})
+        )
+        
+        return jsonify({
+            "status": "success",
+            "message": "Lore entry created successfully",
+            "id": entry_id
+        }), 201
+    except Exception as e:
+        logger.error(f"Error creating lore entry: {str(e)}")
+        return jsonify({"error": f"Failed to create lore entry: {str(e)}"}), 500
+
+@app.route('/api/world/lore/<entry_id>', methods=['PUT'])
+def update_lore_entry(entry_id):
+    """Update an existing lore entry"""
+    data = request.json
+    
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    
+    try:
+        from canon_vdb import CanonVDB
+        vdb = CanonVDB()
+        
+        # Check if entry exists
+        entry = vdb.get_lore_by_id(entry_id)
+        if not entry:
+            return jsonify({"error": "Lore entry not found"}), 404
+        
+        # Update entry
+        success = vdb.update_lore_entry(
+            entry_id=entry_id,
+            content=data.get('content'),
+            metadata={
+                "title": data.get('title'),
+                "category": data.get('category'),
+                "world_id": data.get('world_id'),
+                **data.get('metadata', {})
+            } if any(k in data for k in ['title', 'category', 'world_id', 'metadata']) else None
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Lore entry updated successfully"
+            })
+        else:
+            return jsonify({"error": "Failed to update lore entry"}), 500
+    except Exception as e:
+        logger.error(f"Error updating lore entry {entry_id}: {str(e)}")
+        return jsonify({"error": f"Failed to update lore entry: {str(e)}"}), 500
+
+@app.route('/api/world/lore/<entry_id>', methods=['DELETE'])
+def delete_lore_entry(entry_id):
+    """Delete a lore entry"""
+    try:
+        from canon_vdb import CanonVDB
+        vdb = CanonVDB()
+        
+        # Check if entry exists
+        entry = vdb.get_lore_by_id(entry_id)
+        if not entry:
+            return jsonify({"error": "Lore entry not found"}), 404
+        
+        # Delete entry
+        success = vdb.delete_lore_entry(entry_id)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Lore entry deleted successfully"
+            })
+        else:
+            return jsonify({"error": "Failed to delete lore entry"}), 500
+    except Exception as e:
+        logger.error(f"Error deleting lore entry {entry_id}: {str(e)}")
+        return jsonify({"error": f"Failed to delete lore entry: {str(e)}"}), 500
+
+@app.route('/api/world/lore/import', methods=['POST'])
+def import_lore_entries():
+    """Import lore entries from a JSON file"""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"error": "No file selected"}), 400
+    
+    if not file.filename.endswith('.json'):
+        return jsonify({"error": "Only JSON files are supported"}), 400
+    
+    try:
+        import tempfile
+        from canon_vdb import CanonVDB
+        
+        # Save uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as temp:
+            file.save(temp.name)
+            temp_path = temp.name
+            
+        # Import entries
+        vdb = CanonVDB()
+        count = vdb.import_from_json(temp_path)
+        
+        # Clean up
+        os.unlink(temp_path)
+        
+        return jsonify({
+            "status": "success",
+            "message": f"Imported {count} lore entries successfully"
+        })
+    except Exception as e:
+        logger.error(f"Error importing lore entries: {str(e)}")
+        return jsonify({"error": f"Failed to import lore entries: {str(e)}"}), 500
+
+@app.route('/api/world/lore/export', methods=['GET'])
+def export_lore_entries():
+    """Export lore entries to a JSON file"""
+    world_id = request.args.get('world_id')
+    
+    try:
+        import tempfile
+        from canon_vdb import CanonVDB
+        
+        # Export entries to a temporary file
+        temp_dir = tempfile.mkdtemp()
+        output_file = os.path.join(temp_dir, 'lore_export.json')
+        
+        vdb = CanonVDB()
+        count = vdb.export_to_json(output_file, world_id=world_id)
+        
+        if count == 0:
+            return jsonify({"error": "No entries found to export"}), 404
+        
+        return send_file(
+            output_file,
+            as_attachment=True,
+            download_name=f"lore_export_{world_id or 'all'}.json",
+            mimetype='application/json'
+        )
+    except Exception as e:
+        logger.error(f"Error exporting lore entries: {str(e)}")
+        return jsonify({"error": f"Failed to export lore entries: {str(e)}"}), 500
 
 # Web3 NFT integration endpoints
 @app.route('/api/web3/metadata/<token_id>', methods=['GET'])
